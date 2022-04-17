@@ -1,0 +1,26 @@
+[package]
+name = "simple-upload-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+actix-web = { version = "4.0.1", features = ["experimental-io-uring", "compress-brotli"] }
+actix-files = { version = "0.6.0", features = ["experimental-io-uring"] }
+actix-multipart = "0.4.0"
+actix-rt = { version = "2.7.0", features = ["macros", "tokio-uring"] }
+anyhow = "1.0.56"
+dotenv = "0.15.0"
+futures-util = { version = "0.3.21", features = ["io"] }
+rand = "0.8.5"
+sha2 = "0.10.2"
+tokio-uring = "0.3.0"
+base64-url = "1.4.13"
+serde = { version = "1.0.136", features = ["derive"] }
+
+[profile.release]
+opt-level = 3
+debug-assertions = false
+debug = false
+lto = true

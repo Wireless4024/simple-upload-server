@@ -2,7 +2,7 @@ use std::fs::{create_dir_all, rename};
 use std::path::PathBuf;
 
 use actix_multipart::Multipart;
-use actix_web::{App, HttpServer, post, Responder};
+use actix_web::{App, get, HttpServer, post, Responder, web};
 use actix_web::web::Query;
 use anyhow::Result;
 use base64_url::encode;
@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use rand::Rng;
 use serde::Deserialize;
 use sha2::{Digest, Sha512_224};
-use tokio_uring::fs::File;
+use tokio_uring::fs::{File, remove_file};
 
 static UPLOAD_PATH: &'static str = "static";
 static mut CODE: String = String::new();
@@ -30,6 +30,7 @@ async fn main() -> Result<()> {
 	HttpServer::new(move || {
 		let app = App::new()
 			.service(actix_files::Files::new(UPLOAD_PATH, ".").disable_content_disposition())
+			.service(delete)
 			.service(upload);
 
 		app
@@ -51,13 +52,22 @@ struct CodeCheck {
 	code: Option<String>,
 }
 
+fn check_code(code: Option<String>) -> bool {
+	unsafe {
+		return if CODE.is_empty() {
+			true
+		} else {
+			code.is_some() && CODE.as_str() == code.unwrap().as_str()
+		};
+	}
+}
+
 #[post("/upload")]
 async fn upload(mut data: Multipart, Query(CodeCheck { code }): Query<CodeCheck>) -> impl Responder {
-	unsafe {
-		if !CODE.is_empty() && CODE.as_str() != code.unwrap_or_else(String::new) {
-			return String::new();
-		}
+	if !check_code(code) {
+		return String::new();
 	}
+
 	while let Some(Ok(mut data)) = data.next().await {
 		let name = data.name();
 		if name == "file" {
@@ -112,4 +122,39 @@ async fn upload(mut data: Multipart, Query(CodeCheck { code }): Query<CodeCheck>
 		}
 	}
 	String::new()
+}
+
+#[derive(Deserialize)]
+struct DeleteFile {
+	hash: String,
+	ext: String,
+}
+
+impl DeleteFile {
+	fn join(self) -> String {
+		let mut base = self.hash;
+		base.reserve_exact(self.ext.len() + 1);
+		base.push('.');
+		base.push_str(self.ext.as_str());
+		base
+	}
+}
+
+#[get("/delete/{hash}/{ext}")]
+async fn delete(path: web::Path<DeleteFile>, Query(CodeCheck { code }): Query<CodeCheck>) -> impl Responder {
+	if !check_code(code) {
+		return "false";
+	}
+
+	let info = path.into_inner();
+	if info.hash.chars().any(|it| !it.is_alphanumeric()) || info.ext.chars().any(|it| !it.is_alphanumeric()) {
+		return "false";
+	}
+	let file = PathBuf::from(UPLOAD_PATH).join(info.join());
+	if file.exists() {
+		remove_file(file).await.unwrap();
+
+		return "true";
+	}
+	return "false";
 }
